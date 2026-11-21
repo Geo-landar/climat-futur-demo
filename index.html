@@ -34,6 +34,9 @@ button:hover{background:rgba(255,255,255,.12)}button:focus-visible,input:focus-v
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chip{min-height:36px;padding:0 10px;border-radius:999px;font-size:13px}
 .chip[aria-pressed=true]{background:var(--grad);border-color:transparent;color:#fff;font-weight:600}
+.chip.water{border-color:#00c8ff;color:#bfefff}.chip.water[aria-pressed=true]{background:linear-gradient(90deg,#00c8ff,#2f6bff);color:#fff}
+.spots{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center;font-size:12px;color:var(--mute)}.spots span{width:100%}
+.spot{min-height:32px;padding:0 10px;border-radius:999px;font-size:12px;border-color:rgba(0,200,255,.45)}
 .tog{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute);margin-top:8px;cursor:pointer}
 .tog input{width:18px;height:18px;accent-color:var(--o)}
 #time{left:50%;transform:translateX(-50%);bottom:14px;width:min(760px,calc(100vw - 28px));padding:12px 16px 14px}
@@ -76,7 +79,7 @@ input[type=range]{flex:1;accent-color:var(--o);height:44px}
 .maplibregl-ctrl-attrib{font-size:10px}
 #more{display:none}
 @media(max-width:820px){#legend{display:none}#fiche{top:auto;bottom:calc(var(--th,180px) + 14px);right:14px;left:14px;width:auto;max-height:min(40vh,calc(100vh - var(--th,180px) - 110px));z-index:8}.ticks{padding-left:0}#year{font-size:34px;min-width:90px}}
-@media(max-width:600px){#more{display:inline-block;min-width:44px}#top:not(.open) .chips,#top:not(.open) .tog{display:none}#top{padding:12px}#top p{display:none}h1{font-size:19px}#time{bottom:8px;padding:10px}.seg button{font-size:12px}#stats{gap:10px;font-size:12px}}
+@media(max-width:600px){#more{display:inline-block;min-width:44px}#top:not(.open) .chips,#top:not(.open) .tog,#top:not(.open) .spots{display:none!important}#top{padding:12px}#top p{display:none}h1{font-size:19px}#time{bottom:8px;padding:10px}.seg button{font-size:12px}#stats{gap:10px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -86,7 +89,7 @@ input[type=range]{flex:1;accent-color:var(--o);height:44px}
 
 <section class="card" id="top">
   <h1><span>Geolandar</span> · Climat futur</h1>
-  <p>Fais avancer le temps et zoome jusqu'à ta rue pour voir ce que le réchauffement change chez toi.</p>
+  <p>Fais avancer le temps, combine les couches et zoome jusqu'à ta rue pour voir ce que le réchauffement change chez toi.</p>
   <div class="srow">
     <input type="search" id="q" placeholder="Ta ville, ton adresse…" autocomplete="off" aria-label="Chercher une adresse">
     <button id="loc" title="Me localiser" aria-label="Me localiser">📍</button>
@@ -95,7 +98,7 @@ input[type=range]{flex:1;accent-color:var(--o);height:44px}
   </div>
   <ul id="res" role="listbox"></ul>
   <div class="chips" id="layers" role="group" aria-label="Couche climatique"></div>
-  <label class="tog"><input type="checkbox" id="tWater" checked> 🌊 Montée des eaux (relief réel)</label>
+  <div class="spots" id="spots"></div>
   <label class="tog"><input type="checkbox" id="tStorm"> 🌪️ Ajouter tempête + marée haute (+2 m)</label>
   <label class="tog"><input type="checkbox" id="tSat"> 🛰️ Vue satellite</label>
 </section>
@@ -169,7 +172,7 @@ const SC=[
 const EXT=[[2020,.09],[2050,.3],[2100,2.0],[2150,5.0]];
 const interp=(t,x)=>{if(x<=t[0][0])return t[0][1];for(let i=1;i<t.length;i++)if(x<=t[i][0]){const[a,b]=[t[i-1],t[i]];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0])}return t[t.length-1][1]};
 const BASE_GW=.7,NOW_GW=1.36,NOW_SL=interp(SC[1].sl,2025);
-const S={year:2025,sc:1,layer:'heat',water:true,storm:false,ext:false,sat:false,pt:null};
+const S={year:2025,sc:1,layers:new Set(['heat']),water:true,storm:false,ext:false,sat:false,pt:null};
 const gw=()=>interp(SC[S.sc].gw,S.year);
 const sl=()=>(S.ext&&S.sc==2?interp(EXT,S.year):interp(SC[S.sc].sl,S.year));
 // --- modèle par cellule
@@ -192,21 +195,21 @@ const LAYERS={
  warm:{e:'🌡️',n:'Réchauffement',t:'Hausse de température vs aujourd\'hui (°C)',stops:[[0,'#ffffff00'],[.5,'#fff1b8'],[1.5,'#ffc46b'],[3,'#ff7b39'],[4.5,'#e0323c'],[6,'#8c0b3e'],[8,'#4a0630']],lab:['0','+2','+4','+6'],v:(c,G)=>{const r=REG[c];let s=0;for(let m=0;m<12;m++)s+=(r>=0?D.k[r][m]??1.3:1.3);return s/12*(G-NOW_GW)}},
  dry:{e:'🏜️',n:'Sécheresse',t:'Aggravation de la sécheresse estivale',stops:[[0,'#e8d9a000'],[.4,'#f3e3a1'],[1,'#e2b867'],[2,'#c47f2b'],[3,'#8f4c17'],[4.5,'#4e2509']],lab:['faible','modérée','forte','extrême'],v:(c,G)=>{const d=drought(c,G);return d.desert?-1:d.s}},
  live:{e:'☠️',n:'Habitabilité',t:'Température moyenne annuelle (niche humaine : 11‑15 °C)',stops:[[22,'#ffcf6e00'],[24,'#ffcf6e'],[26,'#ff8c3a'],[27.5,'#e2402f'],[29,'#7c0f2e'],[31,'#2a0614']],lab:['24 °C','26','27,5','≥ 29 : invivable'],v:(c,G)=>cellClim(c,G).ann},
- air:{e:'😷',n:'Pollution',t:'Particules fines PM2.5 (µg/m³) — seuil OMS : 5',stops:[[0,'#3ccf8e'],[5,'#a6e05a'],[10,'#f5d547'],[25,'#ff8f3d'],[50,'#e8343b'],[80,'#8b1a6b']],lab:['5','10','25','50+'],v:(c)=>{const p=pmOf(c);return p==null?NaN:p}},
- none:{e:'🚫',n:'Aucune',t:'',stops:[],lab:[],v:()=>NaN}};
+ air:{e:'😷',n:'Pollution',t:'Particules fines PM2.5 (µg/m³) — seuil OMS : 5',stops:[[0,'#3ccf8e'],[5,'#a6e05a'],[10,'#f5d547'],[25,'#ff8f3d'],[50,'#e8343b'],[80,'#8b1a6b']],lab:['5','10','25','50+'],v:(c)=>{const p=pmOf(c);return p==null?NaN:p}}
+ };
 const hex2=h=>{const n=parseInt(h.slice(1,7),16);return[n>>16,n>>8&255,n&255,h.length>7?parseInt(h.slice(7,9),16):230]};
 function lut(stops){const lo=stops[0][0],hi=stops[stops.length-1][0];const out=new Uint8Array(256*4);
   for(let i=0;i<256;i++){const v=lo+(hi-lo)*i/255;let k=1;while(k<stops.length-1&&v>stops[k][0])k++;const[a,b]=[stops[k-1],stops[k]];const f=Math.min(1,Math.max(0,(v-a[0])/(b[0]-a[0])));const A=hex2(a[1]),B=hex2(b[1]);for(let j=0;j<4;j++)out[i*4+j]=A[j]+(B[j]-A[j])*f}
   return{lut:out,lo,hi}}
 for(const k in LAYERS)if(LAYERS[k].stops.length)Object.assign(LAYERS[k],lut(LAYERS[k].stops));
 // --- rendu raster (mercator)
-const W=1024,H=1024,cv=document.createElement('canvas');cv.width=W;cv.height=H;const cx=cv.getContext('2d');const img=cx.createImageData(W,H);
+const W=1024,H=1024,CV={};for(const k in LAYERS){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');CV[k]={c,x,img:x.createImageData(W,H)}}
 const MAXLAT=85.0511;const rowF=new Float32Array(H),colF=new Float32Array(W);
 for(let y=0;y<H;y++){const yy=Math.PI*(1-2*(y+.5)/H);const la=Math.atan(Math.sinh(yy))*180/Math.PI;rowF[y]=(la+90)/RES-.5}
 for(let x=0;x<W;x++){colF[x]=((x+.5)/W*360)/RES-.5}
 const VAL=new Float32Array(N);
-function render(){
-  const Ly=LAYERS[S.layer],G=gw(),px=img.data;VAL.fill(NaN);
+function render(key){
+  const Ly=LAYERS[key],G=gw(),cvk=CV[key],px=cvk.img.data;VAL.fill(NaN);
   if(Ly.lut){for(let c=0;c<L;c++)VAL[cells[c]]=Ly.v(c,G)}
   const lo=Ly.lo,sp=(Ly.hi-Ly.lo)||1,lt=Ly.lut;
   for(let y=0;y<H;y++){const rf=rowF[y],i0=Math.floor(rf),fy=rf-i0;const i1=Math.min(NLAT-1,i0+1),ia=Math.max(0,i0);
@@ -219,7 +222,7 @@ function render(){
       if(w<.35){px[p+3]=0;continue}
       const v=s/w;if(v<0){px[p]=150;px[p+1]=140;px[p+2]=120;px[p+3]=70;continue}
       const k=Math.max(0,Math.min(255,Math.round((v-lo)/sp*255)))*4;px[p]=lt[k];px[p+1]=lt[k+1];px[p+2]=lt[k+2];px[p+3]=lt[k+3]*Math.min(1,w*1.4)}}
-  cx.putImageData(img,0,0)}
+  cvk.x.putImageData(cvk.img,0,0)}
 // --- statistiques mondiales
 function globalStats(){const G=gw();let A=0,hot=0;for(let c=0;c<L;c++){if(LAT[c]<-60)continue;A+=COS[c];if(cellClim(c,G).ann>=29)hot+=COS[c]}return hot/A*100}
 // --- carte
@@ -228,7 +231,7 @@ const fr=n=>n.toLocaleString('fr-FR',{maximumFractionDigits:1});
 const map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/dark',center:[10,30],zoom:1.5,maxZoom:18,attributionControl:{compact:true},hash:false});
 map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'bottom-right');
 let ready=false,marker=null;
-function floodExpr(){const T=Math.max(.06,sl()+(S.storm?2:0));const F='rgba(47,140,255,0.78)',P='rgba(150,110,255,0.45)',Z='rgba(0,0,0,0)';
+function floodExpr(){const T=Math.max(.06,sl()+(S.storm?2:0));const F='rgba(0,200,255,0.95)',P='rgba(150,110,255,0.45)',Z='rgba(0,0,0,0)';
   return['interpolate',['linear'],['elevation'],-12000,P,-0.02,P,0,F,T,F,T+0.04,Z,9000,Z]}
 map.on('style.load',()=>{
   map.setProjection({type:'globe'});
@@ -239,9 +242,8 @@ map.on('style.load',()=>{
   for(const l of st.layers){if(l.type==='symbol'&&l.layout&&l.layout['text-field']&&/place|water_name/.test(l.id)){map.setLayoutProperty(l.id,'text-field',['coalesce',['get','name:fr'],['get','name']])}}
   map.addSource('sat',{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'Imagerie © Esri, Maxar, Earthstar Geographics'});
   map.addLayer({id:'sat',type:'raster',source:'sat',layout:{visibility:'none'}},'water');
-  render();
-  map.addSource('clim',{type:'image',url:cv.toDataURL(),coordinates:COORDS});
-  map.addLayer({id:'clim',type:'raster',source:'clim',paint:{'raster-opacity':['interpolate',['linear'],['zoom'],0,.8,6,.65,9,.35,12,.18],'raster-resampling':'linear','raster-fade-duration':0}},'waterway');
+  for(const k in LAYERS){render(k);map.addSource('clim-'+k,{type:'image',url:CV[k].c.toDataURL(),coordinates:COORDS});
+    map.addLayer({id:'clim-'+k,type:'raster',source:'clim-'+k,layout:{visibility:'none'},paint:{'raster-opacity':opa(1),'raster-resampling':'linear','raster-fade-duration':0}},'waterway')}
   map.addSource('dem',{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],encoding:'terrarium',tileSize:256,maxzoom:15,attribution:'Relief : Terrain Tiles (Mapzen/AWS)'});
   const before=map.getLayer('highway_name_other')?'highway_name_other':undefined;
   map.addLayer({id:'flood',type:'color-relief',source:'dem',paint:{'color-relief-color':floodExpr(),'color-relief-opacity':.9}},before);
@@ -249,24 +251,25 @@ map.on('style.load',()=>{
   ready=true;update(true);
   setTimeout(()=>{$('#hint').style.opacity=1;setTimeout(()=>$('#hint').style.opacity=0,3500)},800);
 });
-let pend=false,lastUrl=null;
-function pushImage(){if(!ready)return;cv.toBlob(b=>{const u=URL.createObjectURL(b);map.getSource('clim').updateImage({url:u,coordinates:COORDS});if(lastUrl)setTimeout(((o)=>()=>URL.revokeObjectURL(o))(lastUrl),2000);lastUrl=u})}
+let pend=false;const lastUrl={};
+function opa(f){return['interpolate',['linear'],['zoom'],0,.8*f,6,.65*f,9,.35*f,12,.18*f]}
+function pushImage(k){if(!ready)return;CV[k].c.toBlob(b=>{const u=URL.createObjectURL(b);map.getSource('clim-'+k).updateImage({url:u,coordinates:COORDS});const o=lastUrl[k];if(o)setTimeout(()=>URL.revokeObjectURL(o),2000);lastUrl[k]=u})}
 function update(full){
   $('#year').textContent=S.year;
   if(pend)return;pend=true;
   requestAnimationFrame(()=>{pend=false;
-    if(ready){render();pushImage();map.setPaintProperty('flood','color-relief-color',floodExpr());map.setLayoutProperty('flood','visibility',S.water?'visible':'none');map.setLayoutProperty('water-top','visibility',S.water?'visible':'none');map.setLayoutProperty('sat','visibility',S.sat?'visible':'none')}
-    stats();legend();if(S.pt)fiche()})}
+    if(ready){const n=S.layers.size;for(const k in LAYERS){const on=S.layers.has(k);map.setLayoutProperty('clim-'+k,'visibility',on?'visible':'none');if(on){render(k);pushImage(k);map.setPaintProperty('clim-'+k,'raster-opacity',opa(n>1?.62:1))}}map.setPaintProperty('flood','color-relief-color',floodExpr());map.setLayoutProperty('flood','visibility',S.water?'visible':'none');map.setLayoutProperty('water-top','visibility',S.water?'visible':'none');map.setLayoutProperty('sat','visibility',S.sat?'visible':'none')}
+    stats();legend();$('#spots').style.display=S.water?'flex':'none';if(S.pt)fiche()})}
 function stats(){const G=gw(),s=sl();const hot=globalStats();
   $('#stats').innerHTML=`<span>🌍 Réchauffement mondial <b>+${fr(G)} °C</b></span><span>🌊 Mer <b>+${fr(Math.max(0,(s-NOW_SL)*100))} cm</b> vs aujourd'hui</span><span>☠️ Terres ≥ 29 °C de moyenne <b>${fr(hot)} %</b></span>`;
   const n=[];if(S.year>2100)n.push('Après 2100 : températures figées au niveau de 2100 (projections GIEC détaillées jusqu\'en 2100) ; le niveau de la mer, lui, continue de monter.');
   if(S.ext&&S.sc==2)n.push('Fonte extrême des calottes : scénario de faible confiance que le GIEC ne peut exclure.');
   $('#note').textContent=n.join(' ')}
-function legend(){const Ly=LAYERS[S.layer];let h='';
-  if(Ly.lut){const g=Ly.stops.map(s=>`${s[1].slice(0,7)} ${(s[0]-Ly.lo)/(Ly.hi-Ly.lo)*100}%`).join(',');
+function legend(){let h='';
+  for(const key of S.layers){const Ly=LAYERS[key];const g=Ly.stops.map(s=>`${s[1].slice(0,7)} ${(s[0]-Ly.lo)/(Ly.hi-Ly.lo)*100}%`).join(',');
     h+=`<b>${Ly.e} ${Ly.t}</b><div class="bar" style="background:linear-gradient(90deg,${g})"></div><div class="lab">${Ly.lab.map(x=>`<span>${x}</span>`).join('')}</div>`;
-    if(S.layer==='dry')h+=`<div class="sw"><i style="background:#968c78"></i>désert déjà aride</div>`}
-  if(S.water)h+=`<div class="sw"><i style="background:#2f8cff"></i>sous la mer en ${S.year}${S.storm?' (avec tempête)':''}</div><div class="sw"><i style="background:#966eff"></i>déjà sous le niveau de la mer (digues)</div>`;
+    if(key==='dry')h+=`<div class="sw"><i style="background:#968c78"></i>désert déjà aride</div>`;h+='<div style="height:8px"></div>'}
+  if(S.water)h+=`<div class="sw"><i style="background:#00c8ff"></i>sous la mer en ${S.year}${S.storm?' (avec tempête)':''}</div><div class="sw"><i style="background:#966eff"></i>déjà sous le niveau de la mer (digues)</div>`;
   $('#legend').innerHTML=h||'—'}
 // --- fiche locale
 function cellAt(lng,lat){let i=Math.floor((lat+90)/RES),j=Math.floor((((lng+180)%360+360)%360)/RES);
@@ -321,13 +324,16 @@ function bindX(){$('#fx').onclick=()=>{$('#fiche').classList.remove('on');S.pt=n
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 map.on('click',e=>pick(e.lngLat.lng,e.lngLat.lat));
 // --- contrôles
-$('#layers').innerHTML=Object.entries(LAYERS).map(([k,l])=>`<button class="chip" data-k="${k}" aria-pressed="${k===S.layer}">${l.e} ${l.n}</button>`).join('');
-$('#layers').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;S.layer=b.dataset.k;document.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===b));update()};
+$('#layers').innerHTML=`<button class="chip water" data-k="water" aria-pressed="true">🌊 Montée des eaux</button>`+Object.entries(LAYERS).map(([k,l])=>`<button class="chip" data-k="${k}" aria-pressed="${S.layers.has(k)}">${l.e} ${l.n}</button>`).join('');
+$('#layers').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;const k=b.dataset.k;
+  if(k==='water'){S.water=!S.water;b.setAttribute('aria-pressed',S.water)}else{S.layers.has(k)?S.layers.delete(k):S.layers.add(k);b.setAttribute('aria-pressed',S.layers.has(k))}update()};
+const SPOTS=[['Pays-Bas',4.45,51.9,10],['Vendée',-1.15,46.35,10],['Camargue',4.6,43.5,10],['Dunkerque',2.37,51.03,11],['Venise',12.33,45.44,12],['Bangladesh',89.5,22.6,8],['Delta du Nil',31,31.2,8],['Shanghai',121.5,31.2,9],['Jakarta',106.85,-6.12,11],['Miami',-80.2,25.77,11]];
+$('#spots').innerHTML='<span>Voir les côtes menacées :</span>'+SPOTS.map((s,i)=>`<button class="spot" data-i="${i}">${s[0]}</button>`).join('');
+$('#spots').onclick=e=>{const b=e.target.closest('.spot');if(!b)return;const s=SPOTS[b.dataset.i];map.flyTo({center:[s[1],s[2]],zoom:s[3],speed:1.6});pick(s[1],s[2],s[0])};
 $('#scen').innerHTML=SC.map((s,i)=>`<button data-i="${i}" aria-pressed="${i===S.sc}">${s.n}<br><small>${s.s}</small></button>`).join('')+`<button data-i="ext" aria-pressed="false" title="Fonte extrême des calottes (faible confiance)">🧊 Pire cas<br><small>calottes</small></button>`;
 $('#scen').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.i==='ext'){S.ext=!S.ext;if(S.ext)S.sc=2}else{S.sc=+b.dataset.i;if(S.sc!==2)S.ext=false}
   document.querySelectorAll('#scen button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.i==='ext'?S.ext:(+x.dataset.i===S.sc)));update()};
 $('#yr').oninput=e=>{S.year=+e.target.value;update()};
-$('#tWater').onchange=e=>{S.water=e.target.checked;update()};
 $('#tStorm').onchange=e=>{S.storm=e.target.checked;update()};
 $('#tSat').onchange=e=>{S.sat=e.target.checked;update()};
 let timer=null;$('#play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('#play').textContent='▶';return}
